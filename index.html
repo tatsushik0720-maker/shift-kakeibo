@@ -287,10 +287,35 @@ main .wrap { will-change: transform; display: flex; flex-direction: column; gap:
 @media (max-width: 360px) { .chip, .amt { font-size: 8.5px; } .day { min-height: 66px; } }
 </style>
 <style>
-html{position:fixed;top:0;right:0;bottom:0;left:0;height:auto;padding:0}
-body{position:absolute;top:0;right:0;bottom:0;left:0;height:auto;padding-top:env(safe-area-inset-top,0px)}
+html{position:fixed;top:0;right:0;left:0;bottom:auto;height:var(--app-h,100%);padding:0}
+body{position:absolute;top:0;right:0;left:0;bottom:auto;height:var(--app-h,100%);padding-top:env(safe-area-inset-top,0px)}
 .tabs{padding-bottom:env(safe-area-inset-bottom,0px)}
+#sheetWrap,#lock{bottom:auto;height:var(--app-h,100%)}
 </style>
+<script>
+(function () {
+  var root = document.documentElement;
+  function fit() {
+    var p = document.createElement('div');
+    p.style.cssText = 'position:fixed;top:0;width:0;height:env(safe-area-inset-top,0px);visibility:hidden';
+    root.appendChild(p);
+    var top = p.getBoundingClientRect().height;
+    p.remove();
+    var app = navigator.standalone || matchMedia('(display-mode: standalone)').matches;
+    var wide = innerWidth > innerHeight;
+    var full = wide ? Math.min(screen.width, screen.height) : Math.max(screen.width, screen.height);
+    // ステータスバーの下まで画面が広がっているアプリ表示のときだけ、画面の高さを使う
+    var h = app && top > 0 && full > innerHeight ? full : innerHeight;
+    root.style.setProperty('--app-h', h + 'px');
+  }
+  fit();
+  addEventListener('DOMContentLoaded', fit);
+  addEventListener('load', function () { fit(); setTimeout(fit, 300); });
+  addEventListener('resize', fit);
+  addEventListener('pageshow', fit);
+  addEventListener('orientationchange', function () { setTimeout(fit, 300); });
+})();
+</script>
 
 </head>
 <body>
