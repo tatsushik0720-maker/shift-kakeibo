@@ -10,7 +10,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icon-180.png">
 <link rel="icon" href="icon-192.png">
-<style>:root{color-scheme:light;padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)}body{margin:0;font:14px system-ui}img{max-width:100%}[hidden]{display:none!important}</style>
+<style>:root{color-scheme:light}body{margin:0;font:14px system-ui}img{max-width:100%}[hidden]{display:none!important}</style>
 <title>シフト家計簿</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -286,6 +286,12 @@ main .wrap { will-change: transform; display: flex; flex-direction: column; gap:
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
 @media (max-width: 360px) { .chip, .amt { font-size: 8.5px; } .day { min-height: 66px; } }
 </style>
+<style>
+html{position:fixed;top:0;right:0;bottom:0;left:0;height:auto;padding:0}
+body{position:absolute;top:0;right:0;bottom:0;left:0;height:auto;padding-top:env(safe-area-inset-top,0px)}
+.tabs{padding-bottom:env(safe-area-inset-bottom,0px)}
+</style>
+
 </head>
 <body>
 
