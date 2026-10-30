@@ -294,23 +294,10 @@ body{position:absolute;top:0;right:0;bottom:0;left:0;height:auto;padding-top:env
   html{position:static;height:100lvh;overflow:visible}
   body{position:static;height:100lvh;overflow:visible}
   #sheetWrap,#lock{bottom:auto;height:100lvh}
-  /* 上の空き：iOS 26 が画面の上端にかけるぼかしを避ける量（お試しで変えられる） */
-  .top .wrap{padding-block:calc(10px + var(--top-gap,10px)) 8px}
+  /* iOS 26 が画面の上端にかけるぼかしを避けて、月の表示を10ポイント下げる（実機で決めた値） */
+  .top .wrap{padding-block:20px 8px}
 }
 </style>
-<script>
-// 上の空きの切り替え（iPhone の上で試すためのお試し）
-window.__top = (function () {
-  var root = document.documentElement;
-  function gap() { try { var v = localStorage.getItem('kk-top-gap2'); return v === null ? '10' : v; } catch (e) { return '10'; } }
-  function apply() { root.style.setProperty('--top-gap', gap() + 'px'); }
-  apply();
-  return {
-    gap: gap,
-    setGap: function (v) { try { localStorage.setItem('kk-top-gap2', String(v)); } catch (e) {} apply(); }
-  };
-})();
-</script>
 
 </head>
 <body>
@@ -972,17 +959,6 @@ function dailyLeft(rest) {
   return `1日あたり ${yen(rest / left)}`;
 }
 
-// ホーム画面のアプリのときだけ出す、上の空きのお試し
-function topCard() {
-  const t = window.__top; if (!t) return '';
-  const gaps = [0, 2, 4, 6, 8, 10].map(g => `<button data-topgap="${g}" aria-pressed="${t.gap() === String(g)}">${g}</button>`).join('');
-  return `<section class="card">
-    <h2>上の空きの調整（お試し）</h2>
-    <div class="seg" role="group" aria-label="上の空き">${gaps}</div>
-    <p class="hint" style="margin:8px 0 0">押すとすぐ切り替わります。月の文字がにじまない、一番小さい数字を探してください。</p>
-  </section>`;
-}
-
 function viewSet() {
   const st = S.settings;
   const jobs = st.jobs.map(j => `<button class="row tap" data-job="${j.id}"><span class="dot" style="background:${j.color};border-radius:4px"></span><div class="main"><div class="t">${esc(j.name)}</div><div class="s">時給${num(j.wage)}円・${j.closing ? j.closing + '日締め' : '末日締め'}・${['当月', '翌月', '翌々月'][j.payOffset] || '翌月'}${j.payDay ? j.payDay + '日' : '末日'}払い</div></div><span class="muted">›</span></button>`).join('');
@@ -990,7 +966,6 @@ function viewSet() {
   const wallCustom = !walls.some(w => w[0] === Number(st.wall));
   const accents = [['wakatake', '#0b7f6c', '若竹'], ['ai', '#3451c9', '藍'], ['kaki', '#c2511c', '柿'], ['sakura', '#c23a6e', '桜'], ['sumi', '#36423f', '墨']];
   return `
-  ${topCard()}
   <section class="card">
     <h2>バイト先</h2>
     <div class="list">${jobs || '<div class="empty">まだ登録していません</div>'}</div>
@@ -1721,7 +1696,6 @@ mainEl.addEventListener('touchcancel', () => endSwipe(true), { passive: true });
 $('#view').addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return;
   const d = b.dataset;
-  if (d.topgap !== undefined && window.__top) { window.__top.setGap(d.topgap); return render(); }
   if (d.date) {
     S.sel = d.date; render();
     // カレンダーの日付は入力メニューを開く。明細の日付見出しはその日の詳しい表示へ
