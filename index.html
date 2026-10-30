@@ -294,10 +294,53 @@ body{position:absolute;top:0;right:0;bottom:0;left:0;height:auto;padding-top:env
   html{position:static;height:100lvh;overflow:visible}
   body{position:static;height:100lvh;overflow:visible}
   #sheetWrap,#lock{bottom:auto;height:100lvh}
-  /* iOS 26 が画面の上端にかけるぼかしを避けて、月の表示を下げる */
-  .top .wrap{padding-block:50px 8px}
+  /* 上の空き：iOS 26 が画面の上端にかけるぼかしを避ける量（お試しで変えられる） */
+  .top .wrap{padding-block:calc(10px + var(--top-gap,20px)) 8px}
+  /* 対策1：上のバーを画面の最上部に固定する */
+  html[data-top="1"] body{padding-top:0}
+  html[data-top="1"] .top{position:fixed;top:0;left:0;right:0;padding-top:env(safe-area-inset-top,0px)}
+  html[data-top="1"] main{padding-top:calc(env(safe-area-inset-top,0px) + 58px + var(--top-gap,20px))}
+  /* 対策4：画面全体の切り抜きを戻す */
+  html[data-top="4"],html[data-top="4"] body{overflow:hidden}
 }
 </style>
+<script>
+// 上の空きとぼかし対策の切り替え（iPhone の上で試すためのお試し）
+window.__top = (function () {
+  var root = document.documentElement;
+  function get(k, d) { try { return localStorage.getItem(k) || d; } catch (e) { return d; } }
+  function put(k, v) { try { localStorage.setItem(k, String(v)); } catch (e) {} }
+  function size(css) {
+    var p = document.createElement('div');
+    p.style.cssText = 'position:fixed;top:0;width:0;visibility:hidden;height:' + css;
+    root.appendChild(p);
+    var h = Math.round(p.getBoundingClientRect().height);
+    p.remove();
+    return h;
+  }
+  function apply() {
+    var fix = get('kk-top-fix', '0');
+    root.dataset.top = fix;
+    root.style.setProperty('--top-gap', get('kk-top-gap', '20') + 'px');
+    // 対策2：テーマ色の指定を外す
+    if (fix === '2') document.querySelectorAll('meta[name="theme-color"]').forEach(function (m) { m.remove(); });
+    // 対策3：ステータスバーを透けない表示にする（開き直すと効く）
+    if (fix === '3') document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]').content = 'default';
+  }
+  apply();
+  return {
+    fix: function () { return get('kk-top-fix', '0'); },
+    gap: function () { return get('kk-top-gap', '20'); },
+    setFix: function (v) { put('kk-top-fix', v); apply(); },
+    setGap: function (v) { put('kk-top-gap', v); apply(); },
+    info: function () {
+      var ios = (navigator.userAgent.match(/OS (\d+[_\d]*)/) || [])[1] || '不明';
+      return 'iOS ' + ios.replace(/_/g, '.') + ' / 画面 ' + screen.width + '×' + screen.height + ' / inner ' + innerHeight +
+        ' / lvh ' + size('100lvh') + ' / 上 ' + size('env(safe-area-inset-top,0px)') + ' / 下 ' + size('env(safe-area-inset-bottom,0px)');
+    }
+  };
+})();
+</script>
 
 </head>
 <body>
@@ -959,6 +1002,20 @@ function dailyLeft(rest) {
   return `1日あたり ${yen(rest / left)}`;
 }
 
+// ホーム画面のアプリのときだけ出す、上の空きとぼかし対策のお試し
+function topCard() {
+  const t = window.__top; if (!t) return '';
+  const gaps = [0, 10, 20, 30, 40].map(g => `<button data-topgap="${g}" aria-pressed="${t.gap() === String(g)}">${g}</button>`).join('');
+  const fixes = ['なし', '1', '2', '3', '4'].map((n, i) => `<button data-topfix="${i}" aria-pressed="${t.fix() === String(i)}">${n}</button>`).join('');
+  return `<section class="card">
+    <h2>上の表示の調整（お試し）</h2>
+    <div class="field"><span>上の空き</span><div class="seg" role="group" aria-label="上の空き">${gaps}</div></div>
+    <div class="field" style="margin-top:10px"><span>ぼかし対策</span><div class="seg" role="group" aria-label="ぼかし対策">${fixes}</div></div>
+    <p class="hint" style="margin:8px 0 0">押すとすぐ切り替わります。対策2と3は、アプリを閉じて開き直すと効きます。上の空きを0にして、月の文字がにじまない対策を探してください。</p>
+    <p class="hint num" style="margin:8px 0 0;word-break:break-all">${esc(t.info())}</p>
+  </section>`;
+}
+
 function viewSet() {
   const st = S.settings;
   const jobs = st.jobs.map(j => `<button class="row tap" data-job="${j.id}"><span class="dot" style="background:${j.color};border-radius:4px"></span><div class="main"><div class="t">${esc(j.name)}</div><div class="s">時給${num(j.wage)}円・${j.closing ? j.closing + '日締め' : '末日締め'}・${['当月', '翌月', '翌々月'][j.payOffset] || '翌月'}${j.payDay ? j.payDay + '日' : '末日'}払い</div></div><span class="muted">›</span></button>`).join('');
@@ -966,6 +1023,7 @@ function viewSet() {
   const wallCustom = !walls.some(w => w[0] === Number(st.wall));
   const accents = [['wakatake', '#0b7f6c', '若竹'], ['ai', '#3451c9', '藍'], ['kaki', '#c2511c', '柿'], ['sakura', '#c23a6e', '桜'], ['sumi', '#36423f', '墨']];
   return `
+  ${topCard()}
   <section class="card">
     <h2>バイト先</h2>
     <div class="list">${jobs || '<div class="empty">まだ登録していません</div>'}</div>
@@ -1696,6 +1754,8 @@ mainEl.addEventListener('touchcancel', () => endSwipe(true), { passive: true });
 $('#view').addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return;
   const d = b.dataset;
+  if (d.topgap !== undefined && window.__top) { window.__top.setGap(d.topgap); return render(); }
+  if (d.topfix !== undefined && window.__top) { window.__top.setFix(d.topfix); return render(); }
   if (d.date) {
     S.sel = d.date; render();
     // カレンダーの日付は入力メニューを開く。明細の日付見出しはその日の詳しい表示へ
