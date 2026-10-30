@@ -1,5 +1,5 @@
 // 通信がなくても開けるようにするための仕組み
-const CACHE = 'shift-kakeibo-50474c3084';
+const CACHE = 'shift-kakeibo-d19bbffbc7';
 const SHELL = ['./', './index.html', './manifest.webmanifest', './icon-180.png', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {

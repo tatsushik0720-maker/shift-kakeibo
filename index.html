@@ -287,67 +287,17 @@ main .wrap { will-change: transform; display: flex; flex-direction: column; gap:
 @media (max-width: 360px) { .chip, .amt { font-size: 8.5px; } .day { min-height: 66px; } }
 </style>
 <style>
-/* 標準：画面に伝わった高さに合わせる。余白は出るが、隠れる所はない */
 html{position:fixed;top:0;right:0;bottom:0;left:0;height:auto;padding:0}
 body{position:absolute;top:0;right:0;bottom:0;left:0;height:auto;padding-top:env(safe-area-inset-top,0px)}
 .tabs{padding-bottom:env(safe-area-inset-bottom,0px)}
-/* A：画面そのものの高さまで広げ、切り抜きをやめる */
-html[data-fit="1"]{bottom:auto;height:var(--app-h);overflow:visible}
-html[data-fit="1"] body{bottom:auto;height:var(--app-h);overflow:visible}
-/* B：固定をやめて、いちばん大きい画面の高さ（lvh）を使う */
-html[data-fit="2"]{position:static;height:100lvh;overflow:visible}
-html[data-fit="2"] body{position:static;height:100lvh;overflow:visible}
-/* C：固定をやめて、今の画面の高さ（dvh）を使う */
-html[data-fit="3"]{position:static;height:100dvh}
-html[data-fit="3"] body{position:static;height:100dvh}
-/* 入力シートとロック画面も同じ高さにする */
-html[data-fit="1"] #sheetWrap,html[data-fit="1"] #lock{bottom:auto;height:var(--app-h)}
-html[data-fit="2"] #sheetWrap,html[data-fit="2"] #lock{bottom:auto;height:100lvh}
-html[data-fit="3"] #sheetWrap,html[data-fit="3"] #lock{bottom:auto;height:100dvh}
+@media (display-mode: standalone) {
+  html{position:static;height:100lvh;overflow:visible}
+  body{position:static;height:100lvh;overflow:visible}
+  #sheetWrap,#lock{bottom:auto;height:100lvh}
+  /* iOS 26 が画面の上端にかけるぼかしを避けて、月の表示を下げる */
+  .top .wrap{padding-block:50px 8px}
+}
 </style>
-<script>
-// 画面の表示方法の切り替え（iPhone の上で試すためのお試し）
-window.__fit = (function () {
-  var KEY = 'kk-fit', root = document.documentElement;
-  function mode() { try { return localStorage.getItem(KEY) || '0'; } catch (e) { return '0'; } }
-  function size(css) {
-    var p = document.createElement('div');
-    p.style.cssText = 'position:fixed;top:0;width:0;visibility:hidden;height:' + css;
-    root.appendChild(p);
-    var h = Math.round(p.getBoundingClientRect().height);
-    p.remove();
-    return h;
-  }
-  function fit() {
-    var wide = innerWidth > innerHeight;
-    var full = wide ? Math.min(screen.width, screen.height) : Math.max(screen.width, screen.height);
-    root.style.setProperty('--app-h', (wide ? innerHeight : Math.max(full, innerHeight)) + 'px');
-  }
-  function apply() {
-    var m = mode();
-    root.dataset.fit = m;
-    // D：ステータスバーを透けない表示にする（アプリを開き直すと効く）
-    if (m === '4') document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]').content = 'default';
-    fit();
-  }
-  apply();
-  addEventListener('load', fit);
-  addEventListener('resize', fit);
-  addEventListener('orientationchange', function () { setTimeout(fit, 300); });
-  return {
-    mode: mode,
-    set: function (m) { try { localStorage.setItem(KEY, String(m)); } catch (e) {} apply(); },
-    info: function () {
-      var ios = (navigator.userAgent.match(/OS (\d+[_\d]*)/) || [])[1] || '不明';
-      return 'iOS ' + ios.replace(/_/g, '.') + ' / アプリ表示 ' + (navigator.standalone ? 'はい' : 'いいえ') +
-        ' / 画面 ' + screen.width + '×' + screen.height + ' / inner ' + innerHeight +
-        ' / client ' + root.clientHeight + ' / visual ' + (window.visualViewport ? Math.round(visualViewport.height) : '-') +
-        ' / vh ' + size('100vh') + ' / svh ' + size('100svh') + ' / dvh ' + size('100dvh') + ' / lvh ' + size('100lvh') +
-        ' / 上 ' + size('env(safe-area-inset-top,0px)') + ' / 下 ' + size('env(safe-area-inset-bottom,0px)');
-    }
-  };
-})();
-</script>
 
 </head>
 <body>
@@ -1009,19 +959,6 @@ function dailyLeft(rest) {
   return `1日あたり ${yen(rest / left)}`;
 }
 
-// ホーム画面のアプリのときだけ出す、画面の表示方法のお試し
-function fitCard() {
-  const f = window.__fit; if (!f) return '';
-  const m = f.mode();
-  const btns = ['標準', 'A', 'B', 'C', 'D'].map((t, i) => `<button data-fit="${i}" aria-pressed="${m === String(i)}">${t}</button>`).join('');
-  return `<section class="card">
-    <h2>画面の調整（お試し）</h2>
-    <div class="seg" role="group" aria-label="画面の表示方法">${btns}</div>
-    <p class="hint" style="margin:8px 0 0">押すとすぐ切り替わります。Dだけは、アプリを閉じて開き直すと効きます。下の余白がなくなり、タブの文字も全部見えるものを教えてください。</p>
-    <p class="hint num" style="margin:8px 0 0;word-break:break-all">${esc(f.info())}</p>
-  </section>`;
-}
-
 function viewSet() {
   const st = S.settings;
   const jobs = st.jobs.map(j => `<button class="row tap" data-job="${j.id}"><span class="dot" style="background:${j.color};border-radius:4px"></span><div class="main"><div class="t">${esc(j.name)}</div><div class="s">時給${num(j.wage)}円・${j.closing ? j.closing + '日締め' : '末日締め'}・${['当月', '翌月', '翌々月'][j.payOffset] || '翌月'}${j.payDay ? j.payDay + '日' : '末日'}払い</div></div><span class="muted">›</span></button>`).join('');
@@ -1029,7 +966,6 @@ function viewSet() {
   const wallCustom = !walls.some(w => w[0] === Number(st.wall));
   const accents = [['wakatake', '#0b7f6c', '若竹'], ['ai', '#3451c9', '藍'], ['kaki', '#c2511c', '柿'], ['sakura', '#c23a6e', '桜'], ['sumi', '#36423f', '墨']];
   return `
-  ${fitCard()}
   <section class="card">
     <h2>バイト先</h2>
     <div class="list">${jobs || '<div class="empty">まだ登録していません</div>'}</div>
@@ -1760,7 +1696,6 @@ mainEl.addEventListener('touchcancel', () => endSwipe(true), { passive: true });
 $('#view').addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return;
   const d = b.dataset;
-  if (d.fit !== undefined && window.__fit) { window.__fit.set(d.fit); return render(); }
   if (d.date) {
     S.sel = d.date; render();
     // カレンダーの日付は入力メニューを開く。明細の日付見出しはその日の詳しい表示へ
