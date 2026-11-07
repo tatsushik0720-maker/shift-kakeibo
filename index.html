@@ -514,6 +514,7 @@ function applyFixed() {
     // レートが空の間は記録しない（0円で残さない）。入れ直すと止まっていた分を記録する
     if (f.currency === 'USD' && !(Number(S.settings.usdRate) > 0)) continue;
     let ym = f.done ? nextYM(f.done) : f.start;
+    if (ym < f.start) ym = f.start;
     while (ym <= cur && (!f.end || ym <= f.end)) {
       const [y, m] = ym.split('-').map(Number);
       const id = `fx-${f.id}-${ym}`;
@@ -722,7 +723,7 @@ function viewCal() {
       <div><div class="lbl">収支</div><div class="val num" style="color:${inc - exp < 0 ? 'var(--expense)' : 'var(--ink)'}">${inc - exp < 0 ? '-' : ''}${num(Math.abs(inc - exp))}</div></div>
     </div>
     <div class="salary-line"><span class="muted">${m}月分のシフト給料（見込み）</span><b class="num">${yen(sal)}</b></div>
-    ${plan.length ? `<div class="salary-line"><span class="muted">固定費の予定（${plan.length}件）</span><b class="num">${planExp ? `<span class="exp">-${yen(planExp)}</span>` : ''}${planInc ? ` <span class="inc">+${yen(planInc)}</span>` : ''}</b></div>` : ''}
+    ${plan.length ? `<div class="salary-line"><span class="muted">固定費の予定（${plan.length}件）</span><b class="num">${planExp ? `<span class="exp">-${yen(planExp)}</span>` : ''}${planInc ? ` <span class="inc">+${yen(planInc)}</span>` : ''}${!planExp && !planInc ? '<span class="muted">レート未入力</span>' : ''}</b></div>` : ''}
   </section>
   <section class="card cal">
     <div class="dow">${DOW.map(x => `<div>${x}</div>`).join('')}</div>
@@ -762,8 +763,9 @@ function dayDetail(date, pays) {
 }
 function txRow(t) {
   const c = catById(t.type, t.cat);
+  const noRate = t.planned && t.currency === 'USD' && !t.rate;
   const tag = t.planned ? '<span class="pill">予定</span>' : t.fixedId ? '<span class="pill">固定費</span>' : '';
-  return `<button class="row tap" ${t.planned ? `data-fixed="${t.fixedId}"` : `data-tx="${t.id}"`}><span class="dot" style="background:${c.color}"></span><div class="main"><div class="t">${esc(c.name)}</div>${t.memo || t.currency ? `<div class="s">${esc([t.memo, usdNote(t)].filter(Boolean).join('・'))}</div>` : ''}</div>${tag}<span class="v ${t.type === 'income' ? 'inc' : 'exp'}" ${t.planned ? 'style="opacity:.6"' : ''}>${t.type === 'income' ? '+' : '-'}${yen(t.amount)}</span></button>`;
+  return `<button class="row tap" ${t.planned ? `data-fixed="${t.fixedId}"` : `data-tx="${t.id}"`}><span class="dot" style="background:${c.color}"></span><div class="main"><div class="t">${esc(c.name)}</div>${t.memo || t.currency ? `<div class="s">${esc([t.memo, usdNote(t)].filter(Boolean).join('・'))}</div>` : ''}</div>${tag}<span class="v ${t.type === 'income' ? 'inc' : 'exp'}" ${t.planned ? 'style="opacity:.6"' : ''}>${noRate ? '—' : (t.type === 'income' ? '+' : '-') + yen(t.amount)}</span></button>`;
 }
 // その月の収入・支出を、日付ごとにまとめて新しい日から並べる
 function monthList(y, m) {
