@@ -511,6 +511,8 @@ function applyFixed() {
   const cur = curYM(); const keys = new Set(); let changed = false;
   for (const f of S.settings.fixed || []) {
     if (!f.start) continue;
+    // レートが空の間は記録しない（0円で残さない）。入れ直すと止まっていた分を記録する
+    if (f.currency === 'USD' && !(Number(S.settings.usdRate) > 0)) continue;
     let ym = f.done ? nextYM(f.done) : f.start;
     while (ym <= cur && (!f.end || ym <= f.end)) {
       const [y, m] = ym.split('-').map(Number);
@@ -572,7 +574,7 @@ function holidays(y) {
 const holidayName = d => holidays(+d.slice(0, 4)).get(d) || '';
 const isOff = d => { const w = dow(d); return w === 0 || w === 6 || !!holidayName(d); };
 const fmtUsd = v => '$' + (Math.round(v * 100) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const usdNote = t => t.currency === 'USD' ? `${fmtUsd(t.usd)}（1ドル${t.rate}円）` : '';
+const usdNote = t => t.currency === 'USD' ? `${fmtUsd(t.usd)}（${t.rate ? `1ドル${t.rate}円` : 'レート未入力'}）` : '';
 
 // ---------- 給料の計算 ----------
 const NIGHT_S = 22 * 60, NIGHT_E = 5 * 60;
@@ -652,6 +654,14 @@ function paydaysIn(y, m) {
 }
 
 // ---------- 画面 ----------
+// ドルの固定費があるのにレートが空のときのお知らせ
+function rateNotice() {
+  if (Number(S.settings.usdRate) > 0) return '';
+  const cur = curYM();
+  if (!(S.settings.fixed || []).some(f => f.currency === 'USD' && fixedActive(f, cur))) return '';
+  return `<div class="notice">ドルの固定費を記録できません。設定の「ドルの為替レート」を入れると、止まっていた分をまとめて記録します。</div>`;
+}
+
 // この端末だけに保存しているときのお知らせ
 function localNotice() {
   if (S.mode !== 'local') return '';
@@ -673,7 +683,7 @@ function render() {
   if (act && LIVE_FIELDS.includes(act.id)) { clearTimeout(liveT); saveField(act, false); }
   const v = $('#view');
   const html = { cal: viewCal, pay: viewPay, graph: viewGraph, set: viewSet }[S.view]();
-  v.innerHTML = localNotice() + html;
+  v.innerHTML = rateNotice() + localNotice() + html;
 }
 
 function viewCal() {
@@ -1122,6 +1132,8 @@ function openFixed(id) {
 let sheetCleanup = null;
 function openSheet(html, onMount) {
   const sh = $('#sheet');
+  // シートは使い回すので、前の画面の処理を消してから開く
+  sh.oninput = sh.onchange = sh.onclick = null;
   sh.innerHTML = `<div class="grabber"></div>${html}`;
   $('#sheetWrap').hidden = false;
   document.body.style.overflow = 'hidden';
@@ -1293,8 +1305,8 @@ function openShift(opt = {}) {
       $('#shPrev', sh).innerHTML = `<span>${hm(r.work)}${r.night ? `（深夜${hours(r.night)}）` : ''}${r.ot ? `・残業${hours(r.ot)}` : ''}</span><span>1回 <b class="num">${yen(r.pay)}</b>${cnt > 1 ? `　×${cnt}日` : ''}</span>`;
     };
     paintJobs(); paintMini(); paintPrev();
-    sh.addEventListener('change', paintPrev);
-    sh.addEventListener('input', paintPrev);
+    sh.onchange = paintPrev;
+    sh.oninput = paintPrev;
     sh.onclick = e => {
       const b = e.target.closest('button'); if (!b) return;
       if (b.dataset.close !== undefined) return closeSheet();
@@ -1377,13 +1389,13 @@ function openCats() {
     <button class="btn" data-cadd>＋ カテゴリーを追加</button>
     <p class="hint" style="margin:0">名前や色を変えると、すぐに保存されます。削除しても、すでに記録した分は「未分類」として残ります。</p>`, sh => {
     draw(sh);
-    sh.addEventListener('change', e => {
+    sh.onchange = e => {
       const row = e.target.closest('[data-cid]'); if (!row) return;
       const c = catsOf(type).find(x => x.id === row.dataset.cid); if (!c) return;
       if (e.target.matches('[data-ccolor]')) c.color = e.target.value;
       if (e.target.matches('[data-cname]')) c.name = e.target.value.trim() || c.name;
       persist('settings');
-    });
+    };
     sh.onclick = e => {
       const b = e.target.closest('button'); if (!b) return;
       if (b.dataset.close !== undefined) { closeSheet(); render(); return; }
@@ -1407,7 +1419,7 @@ function openBudgets() {
     <div class="preview"><span>合計</span><b class="num" id="budTot"></b></div>
     <button class="btn pri" data-save>保存する</button>`, sh => {
     const tot = () => { $('#budTot', sh).textContent = yen($$('[data-bud]', sh).reduce((a, i) => a + yenVal(i.value), 0)); };
-    tot(); sh.addEventListener('input', tot);
+    tot(); sh.oninput = tot;
     sh.onclick = e => {
       const btn = e.target.closest('button'); if (!btn) return;
       if (btn.dataset.close !== undefined) return closeSheet();
@@ -1463,7 +1475,7 @@ function openPayAsk(x, more = 0) {
     </div>
     ${more ? `<p class="hint" style="margin:0">ほかにも${more}件、まだ金額を聞いていない給料日があります。</p>` : ''}`, sh => {
     const diff = () => { const a = yenVal($('#payAmt', sh).value), d = a - x.amount; $('#payDiff', sh).innerHTML = `<span>見込みとの差</span><b class="num" style="color:${d < 0 ? 'var(--expense)' : d > 0 ? 'var(--ok)' : 'var(--ink)'}">${d > 0 ? '+' : d < 0 ? '-' : '±'}${yen(Math.abs(d))}</b>`; };
-    diff(); sh.addEventListener('input', diff);
+    diff(); sh.oninput = diff;
     sh.onclick = e => {
       const b = e.target.closest('button'); if (!b) return;
       if (b.dataset.close !== undefined || b.dataset.paylater !== undefined) { closeSheet(); return; }
@@ -1743,7 +1755,7 @@ $('#view').addEventListener('input', e => {
 });
 $('#view').addEventListener('change', e => {
   const t = e.target;
-  if (t.id === 'rateIn') { clearTimeout(liveT); saveField(t, true); toast('レートを保存しました'); render(); }
+  if (t.id === 'rateIn') { clearTimeout(liveT); saveField(t, true); applyFixed(); toast('レートを保存しました'); render(); }
   if (t.id === 'goalIn') { clearTimeout(liveT); saveField(t, true); t.value = S.settings.goalMonthly ? num(S.settings.goalMonthly) : ''; toast('目標を保存しました'); }
   if (t.id === 'wallIn') {
     if (t.value === 'custom') { $('#wallCustomWrap').hidden = false; $('#wallCustomIn').focus(); return; }
