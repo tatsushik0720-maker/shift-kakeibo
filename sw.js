@@ -1,5 +1,5 @@
 // 通信がなくても開けるようにするための仕組み
-const CACHE = 'shift-kakeibo-911417aab6';
+const CACHE = 'shift-kakeibo-d30d14f0fd';
 const SHELL = ['./', './index.html', './manifest.webmanifest', './icon-180.png', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {
@@ -23,4 +23,28 @@ self.addEventListener('fetch', e => {
       const copy = res.clone(); caches.open(CACHE).then(c => c.put(req, copy)); return res;
     }).catch(() => Response.error())));
   }
+});
+
+// ---- ここから push-sw.js ----
+// 入力の通知を受け取って出す（build_pwa.py が sw.js の最後に足す）
+// サーバー（push-server/）からは中身なしの通知が届く。文面はここで作る。
+
+self.addEventListener('push', e => {
+  // iPhone は、届いた通知を必ず画面に出さないと、通知を止めてしまう
+  e.waitUntil(self.registration.showNotification('シフト家計簿', {
+    body: '今日の収入・支出がまだ入力されていません。忘れないうちに記録しましょう。',
+    icon: 'icon-192.png', tag: 'input', data: { url: self.registration.scope },
+  }));
+});
+
+// 通知を押したら、家計簿を開く（開いていればそれを前に出す）
+self.addEventListener('notificationclick', e => {
+  e.notification.close();
+  e.waitUntil((async () => {
+    const list = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    for (const c of list) {
+      if ('focus' in c) { try { await c.focus(); return; } catch (x) {} }
+    }
+    if (self.clients.openWindow) await self.clients.openWindow(self.registration.scope);
+  })());
 });

@@ -1010,6 +1010,7 @@ function viewSet() {
     <h2>パスコードロック<button class="switch" id="passSw" role="switch" aria-checked="${!!st.pass}" aria-label="パスコードロック"></button></h2>
     <p class="hint" style="margin:0">開くたびに4桁の数字をたずねます。人に画面をのぞかれたくないとき用です。</p>
   </section>
+  ${pushSection()}
   <section class="card">
     <h2>データ</h2>
     <p class="hint" style="margin:0 0 10px">保存先：${S.mode === 'db' ? 'claude.ai のあなた専用の領域（同じアカウントで開けば iPhone と PC で同じデータ）' : window.claude ? 'この端末のブラウザ' : 'このiPhoneの中（ホーム画面のアイコンを消すと、データも消えます）'}${st.lastBackup ? `<br>最後のバックアップ：${st.lastBackup.replace(/-/g, '/')}` : ''}</p>
@@ -1250,6 +1251,7 @@ function openTx(opt = {}) {
         if (t.fixedId) rec.fixedId = t.fixedId;
         if (editing) removeTx(editing.id);
         const k2 = keyOfDate(date); ensureMonth(k2).tx.push(rec); persist(k2);
+        if (!editing) markInput();
         closeSheet(); S.sel = date; jumpTo(date); toast(editing ? '直しました' : '記録しました');
       }
       else if (b.dataset.del !== undefined) confirmBtn(b, 'もう一度で削除', () => { removeTx(editing.id); closeSheet(); render(); toast('削除しました'); });
@@ -1495,6 +1497,7 @@ function openPayAsk(x, more = 0) {
           ensureMonth(k).tx.push({ id, date, type: 'income', amount, cat: catsOf('income').some(c => c.id === 'i_salary') ? 'i_salary' : (catsOf('income')[0] || {}).id, memo: `${job.name} ${period.m}月分`, payJob: job.id, payPeriod: payKey(x) });
           persist(k);
         }
+        markInput();
         handled = true; closeSheet(); render(); toast(`${job.name}の給料 ${yen(amount)} を記録しました`);
         setTimeout(maybeAskPay, 350);
       }
@@ -1736,6 +1739,8 @@ $('#view').addEventListener('click', e => {
   if (d.accent) { S.settings.accent = d.accent; applyAccent(); persist('settings'); return render(); }
   if (d.export) return exportData(d.export);
   if (d.import !== undefined) return $('#importFile').click();
+  if (b.id === 'pushSw') return togglePush(b);
+  if (d.pushtest !== undefined) return pushTest();
   if (b.id === 'passSw') {
     if (S.settings.pass) { confirmBtn(b, '', () => { S.settings.pass = null; persist('settings'); render(); toast('ロックを外しました'); }); if (b.dataset.armed) toast('もう一度押すとロックを外します'); }
     else setPass();
@@ -1767,10 +1772,91 @@ $('#view').addEventListener('change', e => {
 });
 
 // 開いたまま月をまたいだときも固定費を記録する
-document.addEventListener('visibilitychange', () => { if (!document.hidden && S.ready) { applyFixed(); render(); maybeAskPay(); } });
+document.addEventListener('visibilitychange', () => { if (!document.hidden && S.ready) { applyFixed(); render(); maybeAskPay(); syncPush(); } });
+
+/* ---------- 入力の通知（サーバー：push-server/） ----------
+   毎晩22時、その日まだ収入・支出を入力していなければ通知が届く。
+   サーバーに送るのは、通知の宛先と「最後に収支を入力した日付」だけ。金額や内容は送らない。
+   通知の設定はこの端末だけのものなので、バックアップには入れない（localStorage の kk-push） */
+const PUSH_URL = 'https://shift-kakeibo-push.tatsushik0720-maker.workers.dev';
+const VAPID_PUBLIC = 'BA5HsTEdA17eTqNL_H7dJAjpY6YB7_BdXywqeH6X_Eu2J6Jx-G9Imvntzd5CUrRqWP5gihGxYqudhRi4lkg_0gY';
+const isStandalone = () => { try { return matchMedia('(display-mode: standalone)').matches || navigator.standalone === true; } catch (e) { return false; } };
+function pushState() {
+  try { const o = JSON.parse(localStorage.getItem('kk-push') || 'null'); return o && typeof o === 'object' ? o : {}; } catch (e) { return {}; }
+}
+function setPushState(o) { try { localStorage.setItem('kk-push', JSON.stringify(o)); } catch (e) {} }
+function pushSection() {
+  const P = pushState(), on = !!P.id;
+  const note = on ? '今日まだ収入・支出を入力していない日は、夜10時に通知が届きます。通知を押すと家計簿が開きます。'
+    : isStandalone() ? '今日まだ収入・支出を入力していない日に、夜10時にお知らせします。'
+    : '通知は、ホーム画面のアイコンから開いたときに設定できます。';
+  return `<section class="card">
+    <h2>入力の通知（夜10時）<button class="switch" id="pushSw" role="switch" aria-checked="${on}" aria-label="入力の通知"></button></h2>
+    <p class="hint" style="margin:0">${note}シフトの入力と、固定費の自動の記録は数えません。サーバーに送るのは、最後に収支を入力した日付だけです。金額や内容は送りません。</p>
+    ${on ? '<div class="btns" style="margin-top:10px"><button class="btn" data-pushtest>テスト通知を送る</button></div>' : ''}
+  </section>`;
+}
+/* 収入・支出を新しく記録したとき */
+function markInput() { const P = pushState(); P.last = todayStr(); setPushState(P); syncPush(true); }
+async function pushPost(path, body, keepalive) {
+  const r = await fetch(PUSH_URL + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), keepalive: !!keepalive });
+  let j = {}; try { j = await r.json(); } catch (e) {}
+  return { status: r.status, ok: r.ok, j };
+}
+/* 最後に入力した日付が変わったときだけサーバーに知らせる。送れなければ次に開いたときにもう一度 */
+let pushBusy = false;
+async function syncPush(keepalive) {
+  const P = pushState();
+  if (!P.id || pushBusy || (P.last || null) === (P.sent || null)) return;
+  pushBusy = true;
+  try {
+    const r = await pushPost('/schedule', { id: P.id, last: P.last || null }, keepalive);
+    const Q = pushState();
+    if (r.ok) { Q.sent = P.last || null; setPushState(Q); }
+    else if (r.status === 404) { delete Q.id; delete Q.sent; setPushState(Q); render(); }
+  } catch (e) {}
+  pushBusy = false;
+}
+function b64uToBytes(s) { const b = atob(s.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((s.length + 3) % 4)); return Uint8Array.from(b, c => c.charCodeAt(0)); }
+function withTimeout(p, ms) { return Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))]); }
+async function togglePush(el) {
+  if (el.disabled) return;
+  const P = pushState();
+  if (P.id) {
+    el.disabled = true;
+    try { const reg = await withTimeout(navigator.serviceWorker.ready, 5000); const sub = await reg.pushManager.getSubscription(); if (sub) await sub.unsubscribe(); } catch (e) {}
+    try { await pushPost('/unsubscribe', { id: P.id }); } catch (e) {}
+    delete P.id; delete P.sent; setPushState(P); render(); toast('通知を止めました'); return;
+  }
+  if (!isStandalone() || !('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) { toast('通知は、ホーム画面のアイコンから開いたときに設定できます'); return; }
+  // 許可はタップの直後に聞く（間に待ちが入ると、iPhone が許可の画面を出さない）
+  let perm = 'denied'; try { perm = await Notification.requestPermission(); } catch (e) {}
+  if (perm !== 'granted') { toast('通知が許可されていません。iPhone の「設定」→「通知」から許可できます'); return; }
+  el.disabled = true; el.setAttribute('aria-checked', 'true');
+  try {
+    const reg = await withTimeout(navigator.serviceWorker.ready, 10000);
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64uToBytes(VAPID_PUBLIC) });
+    const r = await pushPost('/subscribe', { sub: sub.toJSON(), last: P.last || null });
+    if (!r.ok || !r.j.id) throw new Error('subscribe ' + r.status);
+    P.id = r.j.id; P.sent = P.last || null; setPushState(P); render();
+    toast('今日の入力がない日は、夜10時に通知します');
+  } catch (e) { el.disabled = false; el.setAttribute('aria-checked', 'false'); toast('通知の設定に失敗しました。通信を確かめて、もう一度試してください'); }
+}
+async function pushTest() {
+  const P = pushState(); if (!P.id) return;
+  try {
+    const r = await pushPost('/test', { id: P.id });
+    if (r.ok) toast('テスト通知を送りました。数秒で届きます');
+    else if (r.status === 429) toast('1分ほど待ってから、もう一度試してください');
+    else if (r.status === 404) { delete P.id; delete P.sent; setPushState(P); render(); toast('通知の設定が切れていました。もう一度オンにしてください'); }
+    else toast('送れませんでした（' + r.status + '）');
+  } catch (e) { toast('送れませんでした。通信を確かめてください'); }
+}
 
 render();
 boot();
+syncPush();
 })();
 </script>
 
