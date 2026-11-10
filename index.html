@@ -1008,6 +1008,11 @@ function viewSet() {
     <div class="btns"><button class="btn" data-cats>カテゴリーを編集</button><button class="btn" data-budgets>月の予算を決める</button></div>
   </section>
   <section class="card">
+    <h2>画面の明るさ</h2>
+    <div class="seg" role="group" aria-label="画面の明るさ" style="display:flex">${[['', '自動'], ['light', '白'], ['dark', '黒']].map(t => `<button data-theme-set="${t[0]}" aria-pressed="${(st.theme || '') === t[0]}" style="flex:1;min-height:36px">${t[1]}</button>`).join('')}</div>
+    <p class="hint" style="margin:8px 0 0">「自動」では、iPhone のライトモード・ダークモードに合わせて切り替わります。</p>
+  </section>
+  <section class="card">
     <h2>テーマカラー</h2>
     <div class="swatches">${accents.map(a => `<button class="swatch" data-accent="${a[0]}" style="background:${a[1]}" aria-label="${a[2]}" aria-pressed="${st.accent === a[0]}"></button>`).join('')}</div>
   </section>
@@ -1628,7 +1633,17 @@ $('#importFile').addEventListener('change', async e => {
 });
 
 // ---------- 見た目 ----------
-function applyAccent() { document.documentElement.dataset.accent = S.settings.accent || 'wakatake'; }
+function applyAccent() {
+  const root = document.documentElement;
+  root.dataset.accent = S.settings.accent || 'wakatake';
+  // 画面の明るさ：空なら端末に合わせる、light は白、dark は黒
+  const th = S.settings.theme;
+  if (th === 'light' || th === 'dark') root.dataset.theme = th; else delete root.dataset.theme;
+  document.querySelectorAll('meta[name="theme-color"]').forEach(m => {
+    if (!m.dataset.orig) m.dataset.orig = m.content;
+    m.content = th === 'light' ? '#eef2f0' : th === 'dark' ? '#0e1413' : m.dataset.orig;
+  });
+}
 let toastT;
 function toast(msg) { const t = $('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => t.hidden = true, 2200); }
 
@@ -1741,6 +1756,7 @@ $('#view').addEventListener('click', e => {
   if (d.fixed) return openFixed(d.fixed);
   if (d.cats !== undefined) return openCats();
   if (d.budgets !== undefined) return openBudgets();
+  if (d.themeSet !== undefined) { S.settings.theme = d.themeSet || null; applyAccent(); persist('settings'); return render(); }
   if (d.accent) { S.settings.accent = d.accent; applyAccent(); persist('settings'); return render(); }
   if (d.export) return exportData(d.export);
   if (d.import !== undefined) return $('#importFile').click();
